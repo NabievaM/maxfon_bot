@@ -1,6 +1,5 @@
 export interface OrderSession {
-  step?: 'MODEL' | 'COUNT' | 'PHONE';
-  model?: string;
-  count?: number;
-  phone?: string;
+  cart: Record<string, number>;
+  messages: Record<string, number>;
+  waitingForQuantity?: string;
 }

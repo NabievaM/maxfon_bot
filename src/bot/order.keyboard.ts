@@ -1,8 +1,11 @@
 import { Markup } from 'telegraf';
-import { PHONE_MODELS } from './models';
 
-export const modelsKeyboard = Markup.keyboard(
-  PHONE_MODELS.map((model) => [model]),
-)
-  .resize()
-  .oneTime();
+export function modelKeyboard(model: string, count: number) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('➖', `minus_${model}`),
+      Markup.button.callback(`${count}`, 'noop'),
+      Markup.button.callback('➕', `plus_${model}`),
+    ],
+  ]);
+}
