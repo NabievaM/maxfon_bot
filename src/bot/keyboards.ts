@@ -16,3 +16,12 @@ export const orderMenu = Markup.keyboard([
 ])
   .resize()
   .persistent();
+
+export const adminMenu = Markup.keyboard([
+  ['📦 Buyurtmalar'],
+  ['📊 Statistika'],
+  ['👥 Foydalanuvchilar'],
+  ['➕ Model qo‘shish', '📋 Modellar ro‘yxati'],
+])
+  .resize()
+  .persistent();
