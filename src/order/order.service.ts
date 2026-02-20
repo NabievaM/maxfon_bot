@@ -10,6 +10,7 @@ export class OrderService {
   ) {}
 
   create(data: {
+    userId: number;
     username: string;
     phoneNumber: string;
     items: string;

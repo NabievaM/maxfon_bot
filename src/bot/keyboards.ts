@@ -3,6 +3,7 @@ import { Markup } from 'telegraf';
 export const basicMenu = Markup.keyboard([
   ['📱 Telefon narxlari'],
   ['🛒 Buyurtma berish'],
+  ['📦 Mening buyurtmalarim'],
   ['📣 Kanal'],
 ])
   .resize()
@@ -12,6 +13,7 @@ export const orderMenu = Markup.keyboard([
   ['📱 Telefon narxlari'],
   ['🛒 Buyurtma berish'],
   ['🧺 Korzinka', '✅ Rasmiylashtirish'],
+  ['📦 Mening buyurtmalarim'],
   ['📣 Kanal'],
 ])
   .resize()

@@ -23,6 +23,7 @@ import { Order } from './order/order.model';
       database: process.env.DB_NAME,
       autoLoadModels: true,
       synchronize: true,
+      logging: false,
     }),
 
     TelegrafModule.forRoot({
