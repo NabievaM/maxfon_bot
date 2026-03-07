@@ -191,14 +191,19 @@ export class OrderHelper {
 
     const phoneNumber = ctx.message.contact.phone_number;
 
-    const username = ctx.from.username
-      ? `@${ctx.from.username}`
-      : 'Username yo‘q';
-
     const first_name = ctx.from.first_name || 'Noma’lum';
     const last_name = ctx.from.last_name || '';
 
-    let text = '🛒 YANGI BUYURTMA\n\n';
+    const name = `${first_name} ${last_name}`.trim();
+
+    const profile = ctx.from.username
+      ? `<a href="https://t.me/${ctx.from.username}">${name || 'Profil'}</a>`
+      : `<a href="tg://user?id=${ctx.from.id}">${name || 'Profil'}</a>`;
+
+    const now = new Date();
+    const formattedDate =
+      now.toLocaleDateString('uz-UZ') + ' ' + now.toLocaleTimeString('uz-UZ');
+
     let total = 0;
 
     type OrderItem = {
@@ -219,8 +224,6 @@ export class OrderHelper {
       const sum = phoneModel.price * count;
       total += sum;
 
-      text += `📱 ${phoneModel.name} — ${count} dona × ${phoneModel.price}$ = ${sum}$\n`;
-
       itemsArray.push({
         model: phoneModel.name,
         price: phoneModel.price,
@@ -229,12 +232,9 @@ export class OrderHelper {
       });
     }
 
-    text += `\n💵 UMUMIY: ${total}$`;
-    text += `\n📞 Telefon: ${phoneNumber}`;
-
-    await this.orderService.create({
+    const createdOrder = await this.orderService.create({
       userId: ctx.from.id,
-      username,
+      username: ctx.from.username || null,
       first_name,
       last_name,
       phoneNumber,
@@ -242,7 +242,27 @@ export class OrderHelper {
       total,
     });
 
-    await ctx.telegram.sendMessage(ADMIN_ID, text);
+    let text = `🛒 <b>YANGI BUYURTMA</b>\n\n`;
+
+    text += `🆔 <b>Order ID:</b> ${createdOrder.id}\n`;
+    text += `🕒 <b>Sana:</b> ${formattedDate}\n\n`;
+
+    text += `👤 <b>Foydalanuvchi:</b> ${profile}\n`;
+    if (ctx.from.username) {
+      text += `💻 <b>Username:</b> @${ctx.from.username}\n`;
+    }
+    text += `🆔 <b>User ID:</b> ${ctx.from.id}\n\n`;
+
+    for (const item of itemsArray) {
+      text += `📱 ${item.model} — ${item.quantity} dona × ${item.price}$ = ${item.sum}$\n`;
+    }
+
+    text += `\n💵 <b>UMUMIY:</b> ${total}$`;
+    text += `\n📞 <b>Telefon:</b> ${phoneNumber}`;
+
+    await ctx.telegram.sendMessage(ADMIN_ID, text, {
+      parse_mode: 'HTML',
+    });
 
     await ctx.reply('✅ Buyurtma qabul qilindi!', basicMenu);
 
@@ -261,6 +281,12 @@ export class OrderHelper {
     }
 
     const count = Number(text);
+
+    if (count <= 0) {
+      await ctx.reply('❌ Soni 0 dan katta bo‘lishi kerak!');
+      return;
+    }
+
     const modelId = Number(session.waitingForQuantity);
 
     const phone = await this.phoneService.findOne(modelId);

@@ -1,10 +1,9 @@
 import { Update, Start, Hears, On, Ctx, Action } from 'nestjs-telegraf';
-import { Context, Markup } from 'telegraf';
-import { basicMenu, orderMenu, adminMenu } from './keyboards';
-import { modelKeyboard } from './order.keyboard';
+import { Context } from 'telegraf';
+import { basicMenu, adminMenu } from './keyboards';
 import { PhoneService } from '../phone/phone.service';
 import { OrderService } from '../order/order.service';
-import { contactKeyboard } from './contact.keyboard';
+import { UserService } from '../user/user.service';
 import { AdminHelper } from './helpers/admin.helper';
 import { OrderHelper } from './helpers/order.helper';
 import { OrderSession } from './session';
@@ -15,10 +14,12 @@ export class BotUpdate {
   constructor(
     private phoneService: PhoneService,
     private orderService: OrderService,
+    private userService: UserService,
   ) {
     this.adminHelper = new AdminHelper(
       this.phoneService,
       this.orderService,
+      this.userService,
       this.sessions,
     );
 
@@ -33,25 +34,11 @@ export class BotUpdate {
   private adminHelper: AdminHelper;
   private orderHelper: OrderHelper;
 
-  private getSession(ctx: Context): OrderSession {
-    const id = ctx.from!.id;
-
-    if (!this.sessions.has(id)) {
-      this.sessions.set(id, {
-        cart: {},
-        messages: {},
-        waitingForQuantity: undefined,
-      });
-    }
-
-    return this.sessions.get(id)!;
-  }
-
   @Start()
   async start(@Ctx() ctx: Context) {
-    const userId = ctx.from!.id;
+    const telegramId = ctx.from!.id;
 
-    if (userId === ADMIN_ID) {
+    if (telegramId === ADMIN_ID) {
       await ctx.reply(
         'Assalomu alaykum! Admin panelga xush kelibsiz 👋',
         adminMenu,
@@ -59,8 +46,61 @@ export class BotUpdate {
       return;
     }
 
+    let user = await this.userService.findByTelegramId(telegramId);
+
+    if (!user) {
+      user = await this.userService.createIfNotExists({
+        telegramId,
+        username: ctx.from!.username,
+        firstName: ctx.from!.first_name,
+        lastName: ctx.from!.last_name,
+      });
+
+      await ctx.reply(
+        '⏳ So‘rovingiz admin ga yuborildi.\nTasdiqlanishini kuting.',
+      );
+
+      const name =
+        `${ctx.from!.first_name || ''} ${ctx.from!.last_name || ''}`.trim();
+
+      const profile = ctx.from!.username
+        ? `<a href="https://t.me/${ctx.from!.username}">${name || 'Profil'}</a>`
+        : `<a href="tg://user?id=${telegramId}">${name || 'Profil'}</a>`;
+
+      await ctx.telegram.sendMessage(
+        ADMIN_ID,
+        `🆕 Yangi foydalanuvchi:\n\n` +
+          `👤 ${profile}\n` +
+          `💻 Username: ${ctx.from!.username ? '@' + ctx.from!.username : 'yo‘q'}\n` +
+          `🆔 Telegram ID: ${telegramId}\n` +
+          `📞 Telefon: yo‘q\n` +
+          `✅ Holati: Kutilmoqda`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: '✅ Ruxsat berish',
+                  callback_data: `approve_${user.id}`,
+                },
+                { text: '❌ Rad etish', callback_data: `reject_${user.id}` },
+              ],
+            ],
+          },
+        },
+      );
+
+      return;
+    }
+
+    if (!user.approved) {
+      await ctx.reply('⏳ So‘rovingiz ko‘rib chiqilmoqda...');
+      return;
+    }
+
     await ctx.reply(
-      'Assalomu alaykum! MAXFON telefonlar do‘koniga xush kelibsiz 👋',
+      `Assalomu alaykum ${user.firstName || ''}! 👋\nMAXFON botiga xush kelibsiz.`,
       basicMenu,
     );
   }
@@ -129,6 +169,21 @@ export class BotUpdate {
   @On('contact')
   async onContact(@Ctx() ctx: any) {
     await this.orderHelper.onContact(ctx);
+  }
+
+  @Hears('📥 So‘rovlar')
+  async pending(@Ctx() ctx: any) {
+    await this.adminHelper.showPending(ctx);
+  }
+
+  @Action(/^approve_(\d+)$/)
+  async approve(@Ctx() ctx: any) {
+    await this.adminHelper.approveUser(ctx, Number(ctx.match[1]));
+  }
+
+  @Action(/^reject_(\d+)$/)
+  async reject(@Ctx() ctx: any) {
+    await this.adminHelper.rejectUser(ctx, Number(ctx.match[1]));
   }
 
   @Hears('➕ Model qo‘shish')

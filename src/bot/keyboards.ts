@@ -20,6 +20,7 @@ export const orderMenu = Markup.keyboard([
   .persistent();
 
 export const adminMenu = Markup.keyboard([
+  ['📥 So‘rovlar'],
   ['📦 Buyurtmalar'],
   ['📊 Statistika'],
   ['👥 Foydalanuvchilar'],

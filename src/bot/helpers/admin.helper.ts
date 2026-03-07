@@ -1,7 +1,9 @@
 import { Context } from 'telegraf';
 import { PhoneService } from '../../phone/phone.service';
 import { OrderService } from '../../order/order.service';
+import { UserService } from '../../user/user.service';
 import { OrderSession } from '../session';
+import { basicMenu } from '../keyboards';
 
 const ADMIN_ID = Number(process.env.ADMIN_ID);
 
@@ -9,6 +11,7 @@ export class AdminHelper {
   constructor(
     private phoneService: PhoneService,
     private orderService: OrderService,
+    private userService: UserService,
     private sessions: Map<number, OrderSession>,
   ) {}
 
@@ -24,6 +27,90 @@ export class AdminHelper {
     }
 
     return this.sessions.get(id)!;
+  }
+
+  async showPending(ctx: any) {
+    if (ctx.from.id !== ADMIN_ID) return;
+
+    const users = await this.userService.getPendingUsers();
+
+    if (!users.length) {
+      await ctx.reply('So‘rovlar yo‘q');
+      return;
+    }
+
+    for (const user of users) {
+      const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+
+      const profile = user.username
+        ? `<a href="https://t.me/${user.username}">${name || 'Profil'}</a>`
+        : `<a href="tg://user?id=${user.telegramId}">${name || 'Profil'}</a>`;
+
+      const text =
+        `🆕 Yangi foydalanuvchi so‘rovi:\n\n` +
+        `👤 ${profile}\n` +
+        `💻 Username: ${user.username ? '@' + user.username : 'yo‘q'}\n` +
+        `🆔 Telegram ID: ${user.telegramId}\n` +
+        `📞 Telefon: ${user.phoneNumber || 'yo‘q'}\n` +
+        `✅ Holati: Kutilmoqda`;
+
+      await ctx.telegram.sendMessage(ADMIN_ID, text, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '✅ Ruxsat berish',
+                callback_data: `approve_${user.id}`,
+              },
+              {
+                text: '❌ Rad etish',
+                callback_data: `reject_${user.id}`,
+              },
+            ],
+          ],
+        },
+      });
+    }
+  }
+
+  async approveUser(ctx: any, id: number) {
+    if (ctx.from.id !== ADMIN_ID) return;
+
+    await this.userService.approveUser(id);
+    const user = await this.userService.findById(id);
+
+    if (user) {
+      await ctx.telegram.sendMessage(
+        user.telegramId,
+        '✅ Sizga ruxsat berildi!\nBotdan foydalanishingiz mumkin.',
+        basicMenu,
+      );
+    }
+
+    await ctx.editMessageText('✅ Ruxsat berildi');
+    await ctx.answerCbQuery();
+  }
+
+  async rejectUser(ctx: any, id: number) {
+    if (ctx.from.id !== ADMIN_ID) return;
+
+    const user = await this.userService.findById(id);
+    if (!user) {
+      await ctx.answerCbQuery('User topilmadi');
+      return;
+    }
+
+    await this.userService.rejectUser(id);
+
+    await ctx.telegram.sendMessage(
+      user.telegramId,
+      `❌ Afsuski, so‘rovingiz admin tomonidan rad etildi.\n\n` +
+        `Qayta urinib ko‘rish uchun /start bosing.`,
+    );
+
+    await ctx.editMessageText('❌ Rad etildi');
+    await ctx.answerCbQuery('Rad etildi');
   }
 
   async addModel(ctx: any) {
@@ -127,7 +214,27 @@ export class AdminHelper {
     for (const order of orders) {
       const items = JSON.parse(order.items);
 
-      let text = `👤 User: ${order.username}\n📞 ${order.phoneNumber}\n\n`;
+      const name = `${order.first_name || ''} ${order.last_name || ''}`.trim();
+
+      const profile = order.username
+        ? `<a href="https://t.me/${order.username}">${name || 'Profil'}</a>`
+        : `<a href="tg://user?id=${order.userId}">${name || 'Profil'}</a>`;
+
+      const date = new Date(order.createdAt).toLocaleString('uz-UZ');
+
+      let text = `🛒 <b>BUYURTMA</b>\n\n`;
+
+      text += `🆔 <b>Order ID:</b> ${order.id}\n`;
+      text += `🕒 <b>Sana:</b> ${date}\n\n`;
+
+      text += `👤 <b>Foydalanuvchi:</b> ${profile}\n`;
+
+      if (order.username) {
+        text += `💻 <b>Username:</b> @${order.username}\n`;
+      }
+
+      text += `🆔 <b>User ID:</b> ${order.userId}\n\n`;
+
       let total = 0;
 
       for (const item of items) {
@@ -135,9 +242,12 @@ export class AdminHelper {
         total += item.sum;
       }
 
-      text += `\n💵 Umumiy: ${total}$`;
+      text += `\n💵 <b>UMUMIY:</b> ${total}$`;
+      text += `\n📞 <b>Telefon:</b> ${order.phoneNumber}`;
 
-      await ctx.reply(text);
+      await ctx.reply(text, {
+        parse_mode: 'HTML',
+      });
     }
   }
 
@@ -147,7 +257,9 @@ export class AdminHelper {
     const orders = await this.orderService.findAll();
 
     if (!orders.length) {
-      await ctx.reply('Hozircha buyurtmalar yo‘q');
+      await ctx.reply('📊 <b>Hozircha buyurtmalar yo‘q</b>', {
+        parse_mode: 'HTML',
+      });
       return;
     }
 
@@ -166,6 +278,8 @@ export class AdminHelper {
           last_name: order.last_name,
           totalSpent: order.total,
           ordersCount: 1,
+          telegramId: order.userId,
+          username: order.username,
         });
       } else {
         const user = usersMap.get(key);
@@ -196,65 +310,56 @@ export class AdminHelper {
       .sort((a, b) => b[1].quantity - a[1].quantity)
       .slice(0, 5);
 
-    let text = `📊 STATISTIKA\n\n`;
-    text += `💵 Jami daromad: ${totalRevenue}$\n`;
-    text += `🛒 Buyurtmalar soni: ${totalOrders}\n\n`;
+    let text = `📊 <b>STATISTIKA</b>\n\n`;
+    text += `💵 <b>Jami daromad:</b> ${totalRevenue}$\n`;
+    text += `🛒 <b>Buyurtmalar soni:</b> ${totalOrders}\n\n`;
 
-    text += `👥 Top foydalanuvchilar:\n`;
+    text += `<b>👥 Top foydalanuvchilar:</b>\n`;
     topUsers.forEach((u, i) => {
-      text += `${i + 1}. ${u.first_name} ${u.last_name} - ${u.ordersCount} buyurtma, ${u.totalSpent}$\n`;
+      const profile = u.username
+        ? `<a href="https://t.me/${u.username}">${u.first_name || ''} ${u.last_name || ''}</a>`
+        : `<a href="tg://user?id=${u.telegramId}">${u.first_name || ''} ${u.last_name || ''}</a>`;
+      text += `${i + 1}. ${profile} — <b>${u.ordersCount} buyurtma</b>, <b>${u.totalSpent}$</b>\n`;
     });
 
-    text += `\n📱 Eng ko‘p sotilgan modellari:\n`;
+    text += `\n<b>📱 Eng ko‘p sotilgan modellari:</b>\n`;
     topModels.forEach(([model, data], i) => {
-      text += `${i + 1}. ${model} - ${data.quantity} dona, ${data.revenue}$\n`;
+      text += `${i + 1}. <b>${model}</b> — ${data.quantity} dona, ${data.revenue}$\n`;
     });
 
-    await ctx.reply(text);
+    await ctx.reply(text, {
+      parse_mode: 'HTML',
+    });
   }
 
   async showUsers(ctx: Context) {
     if (ctx.from!.id !== ADMIN_ID) return;
 
-    const orders = await this.orderService.findAll();
+    const users = await this.userService.findAll();
 
-    if (!orders.length) {
+    if (!users.length) {
       await ctx.reply('Hozircha foydalanuvchilar yo‘q');
       return;
     }
 
-    const usersMap = new Map<string, any>();
+    let text = `👥 Foydalanuvchilar soni: ${users.length}\n\n`;
 
-    for (const order of orders) {
-      const key = order.username || order.phoneNumber;
+    for (const user of users) {
+      const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
 
-      if (!usersMap.has(key)) {
-        usersMap.set(key, {
-          username: order.username,
-          phoneNumber: order.phoneNumber,
-          first_name: order.first_name,
-          last_name: order.last_name,
-          ordersCount: 1,
-          totalSpent: order.total,
-        });
-      } else {
-        const user = usersMap.get(key);
-        user.ordersCount += 1;
-        user.totalSpent += order.total;
-      }
+      const profile = user.username
+        ? `<a href="https://t.me/${user.username}">${name || 'Profil'}</a>`
+        : `<a href="tg://user?id=${user.telegramId}">${name || 'Profil'}</a>`;
+
+      text += `👤 ${profile}\n`;
+      text += `💻 Username: ${user.username ? '@' + user.username : 'yo‘q'}\n`;
+      text += `🆔 Telegram ID: ${user.telegramId}\n`;
+      text += `📞 Telefon: ${user.phoneNumber || 'yo‘q'}\n`;
+      text += `✅ Holati: ${user.approved ? 'Tasdiqlangan' : 'Kutilmoqda'}\n`;
+      text += `────────────\n`;
     }
 
-    let text = `👥 Foydalanuvchilar soni: ${usersMap.size}\n\n`;
-
-    for (const user of usersMap.values()) {
-      text += `👤 ${user.first_name} ${user.last_name}\n`;
-      text += `📱 Telefon: ${user.phoneNumber}\n`;
-      text += `💻 Username: ${user.username}\n`;
-      text += `🛒 Buyurtma soni: ${user.ordersCount}\n`;
-      text += `💵 Jami sarf: ${user.totalSpent}$\n\n`;
-    }
-
-    await ctx.reply(text);
+    await ctx.reply(text, { parse_mode: 'HTML' });
   }
 
   async handleText(ctx: any) {

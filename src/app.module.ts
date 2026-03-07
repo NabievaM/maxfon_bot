@@ -8,13 +8,15 @@ import { SequelizeModule } from '@nestjs/sequelize';
 import { BotModule } from './bot/bot.module';
 import { PhoneModule } from './phone/phone.module';
 import { OrderModule } from './order/order.module';
+import { UserModule } from './user/user.module';
 import { Phone } from './phone/phone.model';
 import { Order } from './order/order.model';
+import { User } from './user/user.model';
 
 @Module({
   imports: [
     SequelizeModule.forRoot({
-      models: [Phone, Order],
+      models: [Phone, Order, User],
       dialect: 'postgres',
       host: process.env.DB_HOST,
       port: Number(process.env.DB_PORT),
@@ -33,6 +35,7 @@ import { Order } from './order/order.model';
     BotModule,
     PhoneModule,
     OrderModule,
+    UserModule,
   ],
 })
 export class AppModule {}
